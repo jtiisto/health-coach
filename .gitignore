@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+ENV/
+.venv/
+
+# Database
+coach.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Server
+.server.pid
+server.log
+
+# Coverage
+.coverage
+htmlcov/
+
+# OS
+.DS_Store
+Thumbs.db
