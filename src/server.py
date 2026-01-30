@@ -17,17 +17,39 @@ from pydantic import BaseModel
 
 # Configuration
 PROJECT_ROOT = Path(__file__).parent.parent
-DATABASE_PATH = PROJECT_ROOT / "coach.db"
 PUBLIC_DIR = PROJECT_ROOT / "public"
 
 # Cache busting: unique version generated on each server start
 SERVER_VERSION = uuid.uuid4().hex[:8]
 
 
+def is_test_mode() -> bool:
+    """Check if running in test mode via environment variable."""
+    import os
+    return os.environ.get("COACH_TEST_MODE", "").lower() == "true"
+
+
+def get_database_path() -> Path:
+    """Get the database path based on mode."""
+    if is_test_mode():
+        return PROJECT_ROOT / "coach_test.db"
+    return PROJECT_ROOT / "coach.db"
+
+
+# Module-level DATABASE_PATH for backwards compatibility with tests
+DATABASE_PATH = get_database_path()
+
+
 @asynccontextmanager
 async def lifespan(app):
-    # Startup
+    # Startup - recalculate database path only if running in test mode
+    # (test fixtures patch DATABASE_PATH directly, so we don't override in that case)
+    global DATABASE_PATH
+    if is_test_mode():
+        DATABASE_PATH = get_database_path()
     init_database()
+    if is_test_mode():
+        seed_test_data()
     yield
     # Shutdown (nothing needed)
 
@@ -292,14 +314,201 @@ def serve_js(file_path: str):
     raise HTTPException(status_code=404, detail=f"JS file not found: {file_path}")
 
 
+def seed_test_data():
+    """Seed the test database with sample workout data for today."""
+    today = datetime.now().strftime("%Y-%m-%d")
+    yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+    tomorrow = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+    now = get_utc_now()
+
+    # Sample workout plan for today
+    today_plan = {
+        "day_name": "Test Day - Lower Body + Conditioning",
+        "location": "Home",
+        "phase": "Foundation",
+        "total_duration_min": 60,
+        "exercises": [
+            {
+                "id": "warmup_1",
+                "name": "Stability Start",
+                "type": "checklist",
+                "items": [
+                    "Cat-Cow x10",
+                    "Bird-Dog x5/side",
+                    "Dead Bug x10",
+                    "Single-Leg Balance 30s/side",
+                    "Thoracic Rotations x5/side",
+                    "Leg Swings x10/direction"
+                ]
+            },
+            {
+                "id": "ex_1",
+                "name": "KB Goblet Squat",
+                "type": "strength",
+                "target_sets": 3,
+                "target_reps": "10",
+                "guidance_note": "Tempo 3-1-1. Parallel depth, heels down. Rest until HR <= 130."
+            },
+            {
+                "id": "ex_2",
+                "name": "DB Romanian Deadlift",
+                "type": "strength",
+                "target_sets": 3,
+                "target_reps": "10",
+                "guidance_note": "Tempo 3-1-1. Feel hamstring stretch."
+            },
+            {
+                "id": "ex_3",
+                "name": "DB Reverse Lunge",
+                "type": "strength",
+                "target_sets": 3,
+                "target_reps": "8/leg",
+                "guidance_note": "Tempo 2-1-1. Step back, knee hovers."
+            },
+            {
+                "id": "ex_4",
+                "name": "Single-Leg Glute Bridge",
+                "type": "strength",
+                "target_sets": 3,
+                "target_reps": "10/leg",
+                "guidance_note": "Tempo 2-2-1. Squeeze at top 2 sec."
+            },
+            {
+                "id": "ex_5",
+                "name": "DB Single-Arm Row",
+                "type": "strength",
+                "target_sets": 3,
+                "target_reps": "10/side",
+                "guidance_note": "Tempo 2-1-1. Pull to hip, squeeze."
+            },
+            {
+                "id": "cardio_1",
+                "name": "Zone 2 Bike",
+                "type": "duration",
+                "target_duration_min": 15,
+                "guidance_note": "5 min warm-up (HR <130), then 10 min STRICT Zone 2 (HR 135-148). Target avg: 140-145 bpm."
+            }
+        ]
+    }
+
+    # Plan for tomorrow (to show date navigation works)
+    tomorrow_plan = {
+        "day_name": "Test Day - Heavy Compound",
+        "location": "Gym",
+        "phase": "Foundation",
+        "total_duration_min": 70,
+        "exercises": [
+            {
+                "id": "warmup_1",
+                "name": "Stability Start",
+                "type": "checklist",
+                "items": ["Cat-Cow x10", "Bird-Dog x5/side", "Dead Bug x10"]
+            },
+            {
+                "id": "ex_1",
+                "name": "Trap Bar Deadlift",
+                "type": "strength",
+                "target_sets": 4,
+                "target_reps": "5",
+                "guidance_note": "RPE 7-8. Warm up: Bar only, 50%, 70%."
+            },
+            {
+                "id": "ex_2",
+                "name": "Assisted Dips",
+                "type": "strength",
+                "target_sets": 3,
+                "target_reps": "6-8",
+                "guidance_note": "RPE 7-8. Control descent 2 sec."
+            },
+            {
+                "id": "cardio_1",
+                "name": "Zone 2 Elliptical",
+                "type": "duration",
+                "target_duration_min": 25,
+                "guidance_note": "Maintain HR 135-148. Reduce resistance if HR rises."
+            }
+        ]
+    }
+
+    # Sample completed log from yesterday
+    yesterday_log = {
+        "session_feedback": {
+            "pain_discomfort": "Minor knee tightness, resolved after warmup",
+            "general_notes": "Good energy, felt strong on squats"
+        },
+        "warmup_1": {
+            "completed_items": ["Cat-Cow x10", "Bird-Dog x5/side", "Dead Bug x10"]
+        },
+        "ex_1": {
+            "completed": True,
+            "user_note": "Used 24kg KB, felt solid",
+            "sets": [
+                {"set_num": 1, "weight": 24, "reps": 10, "rpe": 6, "unit": "kg"},
+                {"set_num": 2, "weight": 24, "reps": 10, "rpe": 7, "unit": "kg"},
+                {"set_num": 3, "weight": 24, "reps": 10, "rpe": 7.5, "unit": "kg"}
+            ]
+        },
+        "ex_2": {
+            "completed": True,
+            "sets": [
+                {"set_num": 1, "weight": 20, "reps": 10, "rpe": 6, "unit": "kg"},
+                {"set_num": 2, "weight": 20, "reps": 10, "rpe": 7, "unit": "kg"},
+                {"set_num": 3, "weight": 20, "reps": 10, "rpe": 7, "unit": "kg"}
+            ]
+        },
+        "cardio_1": {
+            "completed": True,
+            "duration_min": 16,
+            "avg_hr": 142,
+            "max_hr": 151
+        }
+    }
+
+    with get_db() as conn:
+        cursor = conn.cursor()
+
+        # Insert today's plan
+        cursor.execute("""
+            INSERT OR REPLACE INTO workout_plans (date, plan_json, last_modified, last_modified_by)
+            VALUES (?, ?, ?, ?)
+        """, (today, json.dumps(today_plan), now, "test_seed"))
+
+        # Insert tomorrow's plan
+        cursor.execute("""
+            INSERT OR REPLACE INTO workout_plans (date, plan_json, last_modified, last_modified_by)
+            VALUES (?, ?, ?, ?)
+        """, (tomorrow, json.dumps(tomorrow_plan), now, "test_seed"))
+
+        # Insert yesterday's log
+        cursor.execute("""
+            INSERT OR REPLACE INTO workout_logs (date, log_json, last_modified, last_modified_by)
+            VALUES (?, ?, ?, ?)
+        """, (yesterday, json.dumps(yesterday_log), now, "test_seed"))
+
+        conn.commit()
+
+    print(f"  Seeded test data:")
+    print(f"    - Today's plan ({today}): {today_plan['day_name']}")
+    print(f"    - Tomorrow's plan ({tomorrow}): {tomorrow_plan['day_name']}")
+    print(f"    - Yesterday's log ({yesterday}): completed workout")
+
+
 if __name__ == "__main__":
     import argparse
+    import os
     import uvicorn
 
     parser = argparse.ArgumentParser(description="Coach Exercise Tracker Server")
-    parser.add_argument("--test", action="store_true", help="Run in testing mode (port 8003)")
+    parser.add_argument("--test", action="store_true", help="Run in testing mode (port 8003, separate database)")
     parser.add_argument("--port", type=int, help="Override the port number")
     args = parser.parse_args()
+
+    # Configure for test mode via environment variable
+    if args.test:
+        os.environ["COACH_TEST_MODE"] = "true"
+        print(f"Starting in TEST MODE")
+        print(f"  Database: {get_database_path()}")
+        print(f"  Port: {args.port or 8003}")
 
     port = args.port if args.port else (8003 if args.test else 8002)
     uvicorn.run(app, host="0.0.0.0", port=port)
