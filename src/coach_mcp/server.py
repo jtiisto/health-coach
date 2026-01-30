@@ -390,12 +390,512 @@ def create_mcp_server(config: Optional[MCPConfig] = None) -> FastMCP:
         except Exception as e:
             raise ValueError(f"Failed to list scheduled dates: {str(e)}")
 
+    @mcp.tool()
+    def ingest_training_program(
+        plans: Dict[str, Dict[str, Any]],
+        transform_blocks: bool = True
+    ) -> Dict[str, Any]:
+        """WHEN TO USE: When loading a complete training program with multiple workout dates.
+
+        Bulk ingests multiple workout plans at once. Accepts either:
+        1. Block-based format (from LLM plan generation) - set transform_blocks=True
+        2. Flat exercise format (ready for storage) - set transform_blocks=False
+
+        Args:
+            plans: Dictionary mapping dates (YYYY-MM-DD) to plan objects.
+                   Block format includes: phase, theme, location, total_duration_min, blocks[]
+                   Flat format includes: day_name, location, phase, exercises[]
+            transform_blocks: If True, transforms block-based format to flat exercise list.
+                            Set to False if plans are already in flat format.
+
+        Returns:
+            Summary of ingestion results with success/failure counts
+
+        Example (block format):
+            ingest_training_program({
+                "2026-02-02": {
+                    "phase": "Foundation",
+                    "theme": "Lower Body + Bike",
+                    "location": "Home",
+                    "total_duration_min": 60,
+                    "blocks": [
+                        {
+                            "block_type": "warmup",
+                            "title": "Stability Start",
+                            "exercises": [{"name": "Cat-Cow", "reps": 10}]
+                        },
+                        {
+                            "block_type": "strength",
+                            "title": "Strength Block",
+                            "rest_guidance": "Rest until HR <= 130",
+                            "exercises": [
+                                {"name": "KB Goblet Squat", "sets": 3, "reps": 10, "tempo": "3-1-1"}
+                            ]
+                        }
+                    ]
+                }
+            })
+        """
+        results = {"success": [], "failed": [], "total": len(plans)}
+
+        for date_str, plan_data in sorted(plans.items()):
+            try:
+                # Validate date format
+                datetime.strptime(date_str, "%Y-%m-%d")
+
+                # Transform if needed
+                if transform_blocks and "blocks" in plan_data:
+                    plan = _transform_block_plan(plan_data)
+                else:
+                    plan = plan_data
+
+                # Validate required fields
+                if "day_name" not in plan:
+                    plan["day_name"] = plan_data.get("theme", "Workout")
+                if "exercises" not in plan or not plan["exercises"]:
+                    raise ValueError("Plan must have exercises")
+
+                # Save to database
+                now = get_utc_now()
+                plan_json = json.dumps(plan)
+
+                query = """
+                    INSERT OR REPLACE INTO workout_plans (date, plan_json, last_modified, last_modified_by)
+                    VALUES (?, ?, ?, ?)
+                """
+                db_manager.execute_write(query, [date_str, plan_json, now, "mcp"])
+                results["success"].append(date_str)
+
+            except Exception as e:
+                results["failed"].append({"date": date_str, "error": str(e)})
+
+        return {
+            "message": f"Ingested {len(results['success'])} of {results['total']} plans",
+            "success_count": len(results["success"]),
+            "failed_count": len(results["failed"]),
+            "success_dates": results["success"],
+            "failed": results["failed"]
+        }
+
+    @mcp.tool()
+    def update_exercise(
+        date: str,
+        exercise_id: str,
+        updates: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """WHEN TO USE: When modifying a specific exercise within an existing plan.
+
+        Updates fields of a specific exercise without replacing the entire plan.
+        Useful for tweaking sets, reps, weights, or guidance notes.
+
+        Args:
+            date: Date of the plan (YYYY-MM-DD)
+            exercise_id: ID of the exercise to update
+            updates: Dictionary of fields to update. Can include:
+                     - name, type, target_sets, target_reps, target_duration_min
+                     - guidance_note, items, load_guide, tempo, notes
+
+        Returns:
+            Updated exercise and confirmation
+
+        Example:
+            update_exercise("2026-02-02", "ex_1", {
+                "target_sets": 4,
+                "target_reps": "8",
+                "guidance_note": "Increase weight by 5kg"
+            })
+        """
+        try:
+            # Get existing plan
+            query = "SELECT plan_json FROM workout_plans WHERE date = ?"
+            results = db_manager.execute_query(query, [date])
+
+            if not results:
+                raise ValueError(f"No plan found for date: {date}")
+
+            plan = json.loads(results[0]["plan_json"])
+
+            # Find and update the exercise
+            exercise_found = False
+            for exercise in plan.get("exercises", []):
+                if exercise.get("id") == exercise_id:
+                    exercise.update(updates)
+                    exercise_found = True
+                    updated_exercise = exercise
+                    break
+
+            if not exercise_found:
+                raise ValueError(f"Exercise '{exercise_id}' not found in plan for {date}")
+
+            # Save updated plan
+            now = get_utc_now()
+            plan_json = json.dumps(plan)
+
+            update_query = """
+                UPDATE workout_plans
+                SET plan_json = ?, last_modified = ?, last_modified_by = ?
+                WHERE date = ?
+            """
+            db_manager.execute_write(update_query, [plan_json, now, "mcp", date])
+
+            return {
+                "success": True,
+                "date": date,
+                "exercise_id": exercise_id,
+                "updated_exercise": updated_exercise,
+                "message": f"Exercise '{exercise_id}' updated successfully"
+            }
+        except Exception as e:
+            raise ValueError(f"Failed to update exercise: {str(e)}")
+
+    @mcp.tool()
+    def add_exercise(
+        date: str,
+        exercise: Dict[str, Any],
+        position: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """WHEN TO USE: When adding a new exercise to an existing workout plan.
+
+        Adds a new exercise to a plan at the specified position.
+
+        Args:
+            date: Date of the plan (YYYY-MM-DD)
+            exercise: Exercise object with required fields (id, name, type)
+            position: Index to insert at (0 = beginning). None = append to end.
+
+        Returns:
+            Confirmation with updated exercise count
+
+        Example:
+            add_exercise("2026-02-02", {
+                "id": "ex_new",
+                "name": "Plank Hold",
+                "type": "duration",
+                "target_duration_min": 1,
+                "guidance_note": "Maintain tight core"
+            }, position=5)
+        """
+        # Validate exercise
+        required = ["id", "name", "type"]
+        for field in required:
+            if field not in exercise:
+                raise ValueError(f"Exercise missing required field: {field}")
+
+        valid_types = ["strength", "duration", "checklist", "weighted_time", "interval", "circuit"]
+        if exercise["type"] not in valid_types:
+            raise ValueError(f"Invalid exercise type: {exercise['type']}")
+
+        try:
+            # Get existing plan
+            query = "SELECT plan_json FROM workout_plans WHERE date = ?"
+            results = db_manager.execute_query(query, [date])
+
+            if not results:
+                raise ValueError(f"No plan found for date: {date}")
+
+            plan = json.loads(results[0]["plan_json"])
+
+            # Check for duplicate ID
+            existing_ids = {ex.get("id") for ex in plan.get("exercises", [])}
+            if exercise["id"] in existing_ids:
+                raise ValueError(f"Exercise ID '{exercise['id']}' already exists in plan")
+
+            # Add exercise at position
+            exercises = plan.get("exercises", [])
+            if position is None:
+                exercises.append(exercise)
+            else:
+                exercises.insert(position, exercise)
+            plan["exercises"] = exercises
+
+            # Save updated plan
+            now = get_utc_now()
+            plan_json = json.dumps(plan)
+
+            update_query = """
+                UPDATE workout_plans
+                SET plan_json = ?, last_modified = ?, last_modified_by = ?
+                WHERE date = ?
+            """
+            db_manager.execute_write(update_query, [plan_json, now, "mcp", date])
+
+            return {
+                "success": True,
+                "date": date,
+                "added_exercise": exercise,
+                "total_exercises": len(exercises),
+                "message": f"Exercise '{exercise['id']}' added successfully"
+            }
+        except Exception as e:
+            raise ValueError(f"Failed to add exercise: {str(e)}")
+
+    @mcp.tool()
+    def remove_exercise(
+        date: str,
+        exercise_id: str
+    ) -> Dict[str, Any]:
+        """WHEN TO USE: When removing an exercise from an existing workout plan.
+
+        Removes an exercise by ID from the specified plan.
+
+        Args:
+            date: Date of the plan (YYYY-MM-DD)
+            exercise_id: ID of the exercise to remove
+
+        Returns:
+            Confirmation with updated exercise count
+
+        Example:
+            remove_exercise("2026-02-02", "ex_3")
+        """
+        try:
+            # Get existing plan
+            query = "SELECT plan_json FROM workout_plans WHERE date = ?"
+            results = db_manager.execute_query(query, [date])
+
+            if not results:
+                raise ValueError(f"No plan found for date: {date}")
+
+            plan = json.loads(results[0]["plan_json"])
+
+            # Find and remove the exercise
+            exercises = plan.get("exercises", [])
+            original_count = len(exercises)
+            exercises = [ex for ex in exercises if ex.get("id") != exercise_id]
+
+            if len(exercises) == original_count:
+                raise ValueError(f"Exercise '{exercise_id}' not found in plan for {date}")
+
+            plan["exercises"] = exercises
+
+            # Save updated plan
+            now = get_utc_now()
+            plan_json = json.dumps(plan)
+
+            update_query = """
+                UPDATE workout_plans
+                SET plan_json = ?, last_modified = ?, last_modified_by = ?
+                WHERE date = ?
+            """
+            db_manager.execute_write(update_query, [plan_json, now, "mcp", date])
+
+            return {
+                "success": True,
+                "date": date,
+                "removed_exercise_id": exercise_id,
+                "remaining_exercises": len(exercises),
+                "message": f"Exercise '{exercise_id}' removed successfully"
+            }
+        except Exception as e:
+            raise ValueError(f"Failed to remove exercise: {str(e)}")
+
+    @mcp.tool()
+    def delete_workout_plan(date: str) -> Dict[str, Any]:
+        """WHEN TO USE: When removing a workout plan entirely for a specific date.
+
+        Deletes the entire workout plan for the specified date.
+
+        Args:
+            date: Date of the plan to delete (YYYY-MM-DD)
+
+        Returns:
+            Confirmation of deletion
+
+        Example:
+            delete_workout_plan("2026-02-02")
+        """
+        try:
+            # Validate date format
+            datetime.strptime(date, "%Y-%m-%d")
+
+            # Check if plan exists
+            check_query = "SELECT date FROM workout_plans WHERE date = ?"
+            results = db_manager.execute_query(check_query, [date])
+
+            if not results:
+                raise ValueError(f"No plan found for date: {date}")
+
+            # Delete the plan
+            delete_query = "DELETE FROM workout_plans WHERE date = ?"
+            db_manager.execute_write(delete_query, [date])
+
+            return {
+                "success": True,
+                "date": date,
+                "message": f"Workout plan for {date} deleted successfully"
+            }
+        except Exception as e:
+            raise ValueError(f"Failed to delete workout plan: {str(e)}")
+
+    @mcp.tool()
+    def update_plan_metadata(
+        date: str,
+        updates: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """WHEN TO USE: When updating plan metadata without changing exercises.
+
+        Updates plan-level fields like day_name, location, phase without
+        modifying the exercises list.
+
+        Args:
+            date: Date of the plan (YYYY-MM-DD)
+            updates: Fields to update. Can include:
+                     - day_name: New workout name/theme
+                     - location: "Home" or "Gym"
+                     - phase: "Foundation", "Building", or "Intensity"
+                     - total_duration_min: Expected workout duration
+
+        Returns:
+            Updated plan metadata
+
+        Example:
+            update_plan_metadata("2026-02-02", {
+                "day_name": "Lower Body Focus",
+                "phase": "Building"
+            })
+        """
+        allowed_fields = {"day_name", "location", "phase", "total_duration_min"}
+        invalid_fields = set(updates.keys()) - allowed_fields
+        if invalid_fields:
+            raise ValueError(f"Invalid metadata fields: {invalid_fields}. Allowed: {allowed_fields}")
+
+        try:
+            # Get existing plan
+            query = "SELECT plan_json FROM workout_plans WHERE date = ?"
+            results = db_manager.execute_query(query, [date])
+
+            if not results:
+                raise ValueError(f"No plan found for date: {date}")
+
+            plan = json.loads(results[0]["plan_json"])
+
+            # Update metadata fields
+            plan.update(updates)
+
+            # Save updated plan
+            now = get_utc_now()
+            plan_json = json.dumps(plan)
+
+            update_query = """
+                UPDATE workout_plans
+                SET plan_json = ?, last_modified = ?, last_modified_by = ?
+                WHERE date = ?
+            """
+            db_manager.execute_write(update_query, [plan_json, now, "mcp", date])
+
+            return {
+                "success": True,
+                "date": date,
+                "updated_fields": list(updates.keys()),
+                "plan_metadata": {
+                    "day_name": plan.get("day_name"),
+                    "location": plan.get("location"),
+                    "phase": plan.get("phase"),
+                    "total_duration_min": plan.get("total_duration_min"),
+                    "exercise_count": len(plan.get("exercises", []))
+                },
+                "message": f"Plan metadata updated successfully"
+            }
+        except Exception as e:
+            raise ValueError(f"Failed to update plan metadata: {str(e)}")
+
     @mcp.resource("file://coach_plan_guide")
     def coach_plan_guide() -> str:
         """Complete guide to creating workout plans."""
         return _get_coach_plan_guide()
 
     return mcp
+
+
+def _transform_block_to_exercises(block: dict, block_index: int) -> list:
+    """Transform a block into a list of exercises with proper IDs and types."""
+    exercises = []
+    block_type = block.get("block_type", "")
+    title = block.get("title", "")
+    rest_guidance = block.get("rest_guidance", "")
+    duration = block.get("duration_min", 0)
+
+    # Handle blocks with exercises list
+    if "exercises" in block:
+        for i, ex in enumerate(block["exercises"]):
+            exercise_id = f"{block_type}_{block_index}_{i+1}"
+
+            # Determine exercise type based on block type
+            if block_type == "warmup":
+                ex_type = "checklist"
+            elif block_type in ["circuit", "power"]:
+                ex_type = "circuit"
+            elif block_type in ["strength", "accessory"]:
+                ex_type = "strength"
+            else:
+                ex_type = "strength"
+
+            exercise = {
+                "id": exercise_id,
+                "name": ex.get("name", "Unknown"),
+                "type": ex_type,
+            }
+
+            if ex.get("sets"):
+                exercise["target_sets"] = ex["sets"] if isinstance(ex["sets"], int) else 3
+            if ex.get("reps"):
+                exercise["target_reps"] = str(ex["reps"])
+
+            # Build guidance note
+            notes = []
+            if ex.get("tempo"):
+                notes.append(f"Tempo {ex['tempo']}")
+            if ex.get("load_guide"):
+                notes.append(ex["load_guide"])
+            if ex.get("notes"):
+                notes.append(ex["notes"])
+            if rest_guidance and block_type == "strength":
+                notes.append(rest_guidance)
+
+            if notes:
+                exercise["guidance_note"] = ". ".join(notes)
+
+            exercises.append(exercise)
+
+    # Handle blocks with instructions (cardio blocks)
+    elif "instructions" in block:
+        exercise_id = f"{block_type}_{block_index}_1"
+        instructions_text = " ".join(block["instructions"])
+
+        if "VO2" in instructions_text or "HARD" in instructions_text:
+            ex_type = "interval"
+            name = "VO2 Max Intervals"
+        else:
+            ex_type = "duration"
+            name = title or "Zone 2 Cardio"
+
+        exercise = {
+            "id": exercise_id,
+            "name": name,
+            "type": ex_type,
+            "target_duration_min": duration,
+            "guidance_note": " | ".join(block["instructions"])
+        }
+        exercises.append(exercise)
+
+    return exercises
+
+
+def _transform_block_plan(plan_data: dict) -> dict:
+    """Transform block-based plan to flat exercise list format."""
+    exercises = []
+
+    for i, block in enumerate(plan_data.get("blocks", [])):
+        block_exercises = _transform_block_to_exercises(block, i)
+        exercises.extend(block_exercises)
+
+    return {
+        "day_name": plan_data.get("theme", "Workout"),
+        "location": plan_data.get("location", "Home"),
+        "phase": plan_data.get("phase", "Foundation"),
+        "total_duration_min": plan_data.get("total_duration_min", 60),
+        "exercises": exercises
+    }
 
 
 def _get_coach_plan_guide() -> str:
