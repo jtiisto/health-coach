@@ -37,14 +37,41 @@ pip install -r requirements.txt
 ### Running the Server
 
 ```bash
-# Set database path
-export COACH_DB_PATH=./coach.db
+# Start the server (default port 8002)
+./bin/server.sh start
 
-# Start the REST API server (default port 8002)
-python -m src.server
+# Check server status
+./bin/server.sh status
+
+# View logs
+./bin/server.sh logs
+
+# Stop the server
+./bin/server.sh stop
+
+# Restart the server
+./bin/server.sh restart
 ```
 
 Access the PWA at `http://localhost:8002/exercise`
+
+### Server Control Script
+
+The `bin/server.sh` script provides full server lifecycle management:
+
+| Command | Description |
+|---------|-------------|
+| `start` | Start the server in background |
+| `stop` | Stop the running server |
+| `status` | Check if server is running and healthy |
+| `restart` | Stop and start the server |
+| `logs` | Show last 50 lines of server logs |
+| `follow` | Follow logs in real-time (Ctrl+C to exit) |
+
+Use `--test` flag to run in test mode on port 8003:
+```bash
+./bin/server.sh --test start
+```
 
 ### Running Tests
 
@@ -234,6 +261,8 @@ coach/
 │       ├── store.js        # State management
 │       └── components/     # UI components
 ├── bin/
+│   ├── server.sh           # Server control script
+│   ├── deploy-prod.sh      # Production deployment
 │   └── ingest_plans.py     # Bulk ingestion CLI tool
 ├── test/                   # Test suite
 └── requirements.txt
