@@ -30,6 +30,12 @@ def is_test_mode() -> bool:
     return os.environ.get("COACH_TEST_MODE", "").lower() == "true"
 
 
+def is_pytest_running() -> bool:
+    """Check if running under pytest (tests control their own data)."""
+    import sys
+    return "pytest" in sys.modules
+
+
 def get_database_path() -> Path:
     """Get the database path based on mode."""
     if is_test_mode():
@@ -46,11 +52,14 @@ async def lifespan(app):
     # Startup - recalculate database path only if running in test mode
     # (test fixtures patch DATABASE_PATH directly, so we don't override in that case)
     global DATABASE_PATH
-    if is_test_mode():
+    if is_test_mode() and not is_pytest_running():
+        # Only seed when running server manually with --test flag
+        # pytest controls its own test data via fixtures
         DATABASE_PATH = get_database_path()
-    init_database()
-    if is_test_mode():
+        init_database()
         seed_test_data()
+    elif not is_pytest_running():
+        init_database()
     yield
     # Shutdown (nothing needed)
 

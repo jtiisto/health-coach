@@ -54,6 +54,50 @@ class TestMCPConfig:
         with pytest.raises(ValueError, match="cannot exceed"):
             config.validate()
 
+    def test_config_validation_db_path_is_directory(self, tmp_path):
+        """Should raise error when db_path is a directory, not a file."""
+        from coach_mcp.config import MCPConfig
+
+        config = MCPConfig(db_path=tmp_path)
+        with pytest.raises(ValueError, match="not a file"):
+            config.validate()
+
+    def test_config_validation_invalid_transport(self, temp_db_path):
+        """Should raise error for invalid transport."""
+        from coach_mcp.config import MCPConfig
+
+        conn = sqlite3.connect(temp_db_path)
+        conn.execute("CREATE TABLE test (id TEXT)")
+        conn.close()
+
+        config = MCPConfig(db_path=temp_db_path, transport="invalid")
+        with pytest.raises(ValueError, match="Invalid transport"):
+            config.validate()
+
+    def test_config_validation_invalid_port(self, temp_db_path):
+        """Should raise error for invalid port."""
+        from coach_mcp.config import MCPConfig
+
+        conn = sqlite3.connect(temp_db_path)
+        conn.execute("CREATE TABLE test (id TEXT)")
+        conn.close()
+
+        config = MCPConfig(db_path=temp_db_path, port=0)
+        with pytest.raises(ValueError, match="Invalid port"):
+            config.validate()
+
+    def test_config_validation_port_too_high(self, temp_db_path):
+        """Should raise error for port above 65535."""
+        from coach_mcp.config import MCPConfig
+
+        conn = sqlite3.connect(temp_db_path)
+        conn.execute("CREATE TABLE test (id TEXT)")
+        conn.close()
+
+        config = MCPConfig(db_path=temp_db_path, port=70000)
+        with pytest.raises(ValueError, match="Invalid port"):
+            config.validate()
+
 
 @pytest.mark.integration
 class TestDatabaseManager:
@@ -75,6 +119,29 @@ class TestDatabaseManager:
         result = db_manager.execute_query("SELECT date FROM workout_plans")
         assert len(result) == 1
         assert result[0]["date"] == "2026-02-02"
+
+    def test_execute_query_with_write_mode(self, mcp_config, db_manager):
+        """execute_query with read_only=False should commit changes."""
+        # Insert using execute_query with read_only=False
+        db_manager.execute_query(
+            "INSERT INTO workout_plans (date, plan_json, last_modified) VALUES (?, ?, ?)",
+            ["2026-03-01", '{"test": true}', "2026-01-30T00:00:00Z"],
+            read_only=False
+        )
+
+        # Verify the insert was committed
+        result = db_manager.execute_query("SELECT date FROM workout_plans WHERE date = '2026-03-01'")
+        assert len(result) == 1
+
+    def test_execute_query_sql_error(self, mcp_config, db_manager):
+        """execute_query should raise ValueError on SQL error."""
+        with pytest.raises(ValueError, match="Database error"):
+            db_manager.execute_query("SELECT * FROM nonexistent_table")
+
+    def test_execute_write_sql_error(self, mcp_config, db_manager):
+        """execute_write should raise ValueError on SQL error."""
+        with pytest.raises(ValueError, match="Database error"):
+            db_manager.execute_write("INSERT INTO nonexistent_table (x) VALUES (?)", ["test"])
 
 
 @pytest.mark.integration
@@ -163,6 +230,61 @@ class TestSetWorkoutPlan:
         }
 
         with pytest.raises(ValueError, match="invalid type"):
+            tools["set_workout_plan"].fn(date="2026-02-02", plan=invalid_plan)
+
+    def test_plan_validation_plan_not_a_dict(self, mcp_config):
+        """Should reject plan that is not a dictionary."""
+        from coach_mcp.server import create_mcp_server
+
+        mcp = create_mcp_server(mcp_config)
+        tools = {tool.name: tool for tool in mcp._tool_manager._tools.values()}
+
+        with pytest.raises(ValueError, match="Plan must be a dictionary"):
+            tools["set_workout_plan"].fn(date="2026-02-02", plan="not a dict")
+
+    def test_plan_validation_exercises_not_a_list(self, mcp_config):
+        """Should reject plan where exercises is not a list."""
+        from coach_mcp.server import create_mcp_server
+
+        mcp = create_mcp_server(mcp_config)
+        tools = {tool.name: tool for tool in mcp._tool_manager._tools.values()}
+
+        invalid_plan = {
+            "day_name": "Test",
+            "exercises": "not a list"
+        }
+
+        with pytest.raises(ValueError, match="exercises must be a list"):
+            tools["set_workout_plan"].fn(date="2026-02-02", plan=invalid_plan)
+
+    def test_plan_validation_exercise_missing_name(self, mcp_config):
+        """Should reject exercise without name."""
+        from coach_mcp.server import create_mcp_server
+
+        mcp = create_mcp_server(mcp_config)
+        tools = {tool.name: tool for tool in mcp._tool_manager._tools.values()}
+
+        invalid_plan = {
+            "day_name": "Test",
+            "exercises": [{"id": "ex_1", "type": "strength"}]  # Missing name
+        }
+
+        with pytest.raises(ValueError, match="missing 'name' field"):
+            tools["set_workout_plan"].fn(date="2026-02-02", plan=invalid_plan)
+
+    def test_plan_validation_exercise_missing_type(self, mcp_config):
+        """Should reject exercise without type."""
+        from coach_mcp.server import create_mcp_server
+
+        mcp = create_mcp_server(mcp_config)
+        tools = {tool.name: tool for tool in mcp._tool_manager._tools.values()}
+
+        invalid_plan = {
+            "day_name": "Test",
+            "exercises": [{"id": "ex_1", "name": "Squat"}]  # Missing type
+        }
+
+        with pytest.raises(ValueError, match="missing 'type' field"):
             tools["set_workout_plan"].fn(date="2026-02-02", plan=invalid_plan)
 
 
@@ -695,3 +817,60 @@ class TestUpdatePlanMetadata:
                 date="2026-02-02",
                 updates={"exercises": [], "invalid_field": "value"}
             )
+
+
+@pytest.mark.integration
+class TestMCPServerCreation:
+    def test_create_server_from_env_var(self, temp_db_path, monkeypatch):
+        """Should create server using COACH_DB_PATH env var."""
+        import sqlite3
+        from coach_mcp.server import create_mcp_server
+
+        # Create database with required tables
+        conn = sqlite3.connect(temp_db_path)
+        conn.execute("""
+            CREATE TABLE workout_plans (
+                date TEXT PRIMARY KEY,
+                plan_json TEXT NOT NULL,
+                last_modified TEXT NOT NULL,
+                last_modified_by TEXT
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE workout_logs (
+                date TEXT PRIMARY KEY,
+                log_json TEXT NOT NULL,
+                last_modified TEXT NOT NULL,
+                last_modified_by TEXT
+            )
+        """)
+        conn.commit()
+        conn.close()
+
+        # Set environment variable
+        monkeypatch.setenv("COACH_DB_PATH", str(temp_db_path))
+
+        # Create server without explicit config
+        mcp = create_mcp_server()
+        assert mcp is not None
+        assert mcp.name == "Coach Workout Manager"
+
+    def test_create_server_missing_env_var(self, monkeypatch):
+        """Should raise error when COACH_DB_PATH not set."""
+        from coach_mcp.server import create_mcp_server
+
+        # Ensure env var is not set
+        monkeypatch.delenv("COACH_DB_PATH", raising=False)
+
+        with pytest.raises(ValueError, match="COACH_DB_PATH"):
+            create_mcp_server()
+
+
+
+@pytest.mark.integration
+class TestMCPMain:
+    def test_main_module_import(self):
+        """Should be able to import the main module."""
+        # Just importing should work (doesn't run main)
+        from coach_mcp import __main__
+        assert hasattr(__main__, 'main')
