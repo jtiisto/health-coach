@@ -7,7 +7,7 @@ import { effect } from '@preact/signals';
 import htm from 'htm';
 
 import { selectedDate } from '../store.js';
-import { getToday, isToday, isPast } from '../utils.js';
+import { getToday, isToday, isPast, parseLocalDate, formatDateLocal } from '../utils.js';
 
 const html = htm.bind(h);
 
@@ -59,14 +59,16 @@ function getWorkoutStatus(dateStr, plans, logs) {
  * Format date for display in the button
  */
 function formatSelectedDate(dateStr) {
-    const date = new Date(dateStr + 'T00:00:00');
+    const date = parseLocalDate(dateStr);
     const today = getToday();
+
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
-    const yesterdayStr = yesterday.toISOString().split('T')[0];
+    const yesterdayStr = formatDateLocal(yesterday);
+
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
-    const tomorrowStr = tomorrow.toISOString().split('T')[0];
+    const tomorrowStr = formatDateLocal(tomorrow);
 
     if (dateStr === today) return 'Today';
     if (dateStr === yesterdayStr) return 'Yesterday';
@@ -83,7 +85,7 @@ export function CalendarPicker({ plans, logs }) {
     const [isOpen, setIsOpen] = useState(false);
     const [current, setCurrent] = useState(selectedDate.value);
     const [viewDate, setViewDate] = useState(() => {
-        const d = new Date(selectedDate.value + 'T00:00:00');
+        const d = parseLocalDate(selectedDate.value);
         return { year: d.getFullYear(), month: d.getMonth() };
     });
     const modalRef = useRef(null);
@@ -91,7 +93,7 @@ export function CalendarPicker({ plans, logs }) {
     useEffect(() => {
         const dispose = effect(() => {
             setCurrent(selectedDate.value);
-            const d = new Date(selectedDate.value + 'T00:00:00');
+            const d = parseLocalDate(selectedDate.value);
             setViewDate({ year: d.getFullYear(), month: d.getMonth() });
         });
         return dispose;
@@ -137,7 +139,7 @@ export function CalendarPicker({ plans, logs }) {
     const handleToday = () => {
         const today = getToday();
         selectedDate.value = today;
-        const d = new Date(today + 'T00:00:00');
+        const d = parseLocalDate(today);
         setViewDate({ year: d.getFullYear(), month: d.getMonth() });
         setIsOpen(false);
     };

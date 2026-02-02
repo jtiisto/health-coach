@@ -3,10 +3,20 @@
  */
 
 /**
- * Get today's date as YYYY-MM-DD string
+ * Format a Date object as YYYY-MM-DD string in LOCAL timezone
+ */
+export function formatDateLocal(date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+/**
+ * Get today's date as YYYY-MM-DD string in LOCAL timezone
  */
 export function getToday() {
-    return new Date().toISOString().split('T')[0];
+    return formatDateLocal(new Date());
 }
 
 /**
@@ -37,10 +47,18 @@ export function generateId() {
 }
 
 /**
+ * Parse a YYYY-MM-DD string as a local date (midnight in local timezone)
+ */
+export function parseLocalDate(dateStr) {
+    const [year, month, day] = dateStr.split('-').map(Number);
+    return new Date(year, month - 1, day);
+}
+
+/**
  * Format date for display (e.g., "Mon", "Feb 2")
  */
 export function formatDateShort(dateStr) {
-    const date = new Date(dateStr + 'T00:00:00');
+    const date = parseLocalDate(dateStr);
     return {
         day: date.toLocaleDateString('en-US', { weekday: 'short' }),
         num: date.getDate()
@@ -52,12 +70,12 @@ export function formatDateShort(dateStr) {
  */
 export function getDateRange(centerDate, daysAround = 3) {
     const dates = [];
-    const center = new Date(centerDate + 'T00:00:00');
+    const center = parseLocalDate(centerDate);
 
     for (let i = -daysAround; i <= daysAround; i++) {
         const date = new Date(center);
         date.setDate(date.getDate() + i);
-        dates.push(date.toISOString().split('T')[0]);
+        dates.push(formatDateLocal(date));
     }
 
     return dates;
