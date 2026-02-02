@@ -187,7 +187,7 @@ export function CalendarPicker({ plans, logs }) {
     const status = getWorkoutStatus(current, plans, logs);
 
     return html`
-        <div class="calendar-picker">
+        <div class="calendar-picker" ref=${modalRef}>
             <button
                 class="calendar-trigger"
                 onClick=${() => setIsOpen(!isOpen)}
@@ -199,7 +199,7 @@ export function CalendarPicker({ plans, logs }) {
             </button>
 
             ${isOpen && html`
-                <div class="calendar-modal" ref=${modalRef}>
+                <div class="calendar-modal">
                     <div class="calendar-header">
                         <button class="calendar-nav" onClick=${handlePrevMonth}>◀</button>
                         <span class="calendar-month-year">
