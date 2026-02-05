@@ -9,120 +9,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from coach_mcp.config import MCPConfig
-from coach_mcp.server import create_mcp_server
-
-
-def transform_block_to_exercises(block: dict, block_index: int) -> list:
-    """Transform a block into a list of exercises with proper IDs and types."""
-    exercises = []
-    block_type = block.get("block_type", "")
-    title = block.get("title", "")
-    rest_guidance = block.get("rest_guidance", "")
-    duration = block.get("duration_min", 0)
-
-    # Handle warmup blocks specially - aggregate into single checklist
-    if block_type == "warmup" and "exercises" in block:
-        items = []
-        for ex in block["exercises"]:
-            name = ex.get("name", "Unknown")
-            reps = ex.get("reps", "")
-            if reps:
-                items.append(f"{name} x{reps}" if isinstance(reps, int) else f"{name} {reps}")
-            else:
-                items.append(name)
-
-        exercise = {
-            "id": f"warmup_{block_index}",
-            "name": title or "Warmup",
-            "type": "checklist",
-            "items": items
-        }
-        exercises.append(exercise)
-
-    # Handle blocks with exercises list (non-warmup)
-    elif "exercises" in block:
-        for i, ex in enumerate(block["exercises"]):
-            exercise_id = f"{block_type}_{block_index}_{i+1}"
-
-            # Determine exercise type based on block type and exercise content
-            if block_type in ["circuit", "power"]:
-                ex_type = "circuit"
-            elif block_type == "strength":
-                ex_type = "strength"
-            elif block_type == "accessory":
-                ex_type = "strength"
-            else:
-                ex_type = "strength"
-
-            # Build exercise entry
-            exercise = {
-                "id": exercise_id,
-                "name": ex.get("name", "Unknown"),
-                "type": ex_type,
-            }
-
-            # Add sets/reps for strength exercises
-            if ex.get("sets"):
-                exercise["target_sets"] = ex["sets"] if isinstance(ex["sets"], int) else 3
-            if ex.get("reps"):
-                exercise["target_reps"] = str(ex["reps"])
-
-            # Build guidance note from various fields
-            notes = []
-            if ex.get("tempo"):
-                notes.append(f"Tempo {ex['tempo']}")
-            if ex.get("load_guide"):
-                notes.append(ex["load_guide"])
-            if ex.get("notes"):
-                notes.append(ex["notes"])
-            if rest_guidance and block_type == "strength":
-                notes.append(rest_guidance)
-
-            if notes:
-                exercise["guidance_note"] = ". ".join(notes)
-
-            exercises.append(exercise)
-
-    # Handle blocks with instructions (cardio blocks)
-    elif "instructions" in block:
-        exercise_id = f"{block_type}_{block_index}_1"
-
-        # Determine if it's VO2 max or Zone 2
-        instructions_text = " ".join(block["instructions"])
-        if "VO2" in instructions_text or "HARD" in instructions_text:
-            ex_type = "interval"
-            name = "VO2 Max Intervals"
-        else:
-            ex_type = "duration"
-            name = title or "Zone 2 Cardio"
-
-        exercise = {
-            "id": exercise_id,
-            "name": name,
-            "type": ex_type,
-            "target_duration_min": duration,
-            "guidance_note": " | ".join(block["instructions"])
-        }
-        exercises.append(exercise)
-
-    return exercises
-
-
-def transform_plan(plan_data: dict) -> dict:
-    """Transform block-based plan to flat exercise list format."""
-    exercises = []
-
-    for i, block in enumerate(plan_data.get("blocks", [])):
-        block_exercises = transform_block_to_exercises(block, i)
-        exercises.extend(block_exercises)
-
-    return {
-        "day_name": plan_data.get("theme", "Workout"),
-        "location": plan_data.get("location", "Home"),
-        "phase": plan_data.get("phase", "Foundation"),
-        "total_duration_min": plan_data.get("total_duration_min", 60),
-        "exercises": exercises
-    }
+from coach_mcp.server import create_mcp_server, _transform_block_plan
 
 
 def main():
@@ -160,7 +47,7 @@ def main():
     for date_str, plan_data in sorted(all_plans.items()):
         try:
             # Transform to MCP format
-            transformed = transform_plan(plan_data)
+            transformed = _transform_block_plan(plan_data)
 
             # Call MCP tool
             result = set_plan(date=date_str, plan=transformed)

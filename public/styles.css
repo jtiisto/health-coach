@@ -265,6 +265,16 @@ body {
     font-style: italic;
 }
 
+.blocks-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-lg);
+}
+
+.block-exercises .exercise-item:first-child {
+    border-top: none;
+}
+
 /* Exercise Item (Accordion) */
 .exercise-item {
     background-color: var(--bg-card);

@@ -899,18 +899,30 @@ def _transform_block_to_exercises(block: dict, block_index: int) -> list:
 
 
 def _transform_block_plan(plan_data: dict) -> dict:
-    """Transform block-based plan to flat exercise list format."""
-    exercises = []
+    """Transform block-based plan to include both blocks and flat exercise list."""
+    blocks = []
+    exercises = []  # Keep for backward compatibility with logs
 
     for i, block in enumerate(plan_data.get("blocks", [])):
         block_exercises = _transform_block_to_exercises(block, i)
         exercises.extend(block_exercises)
+
+        transformed_block = {
+            "block_index": i,
+            "block_type": block.get("block_type", ""),
+            "title": block.get("title", ""),
+            "duration_min": block.get("duration_min"),
+            "rest_guidance": block.get("rest_guidance", ""),
+            "exercises": block_exercises
+        }
+        blocks.append(transformed_block)
 
     return {
         "day_name": plan_data.get("theme", "Workout"),
         "location": plan_data.get("location", "Home"),
         "phase": plan_data.get("phase", "Foundation"),
         "total_duration_min": plan_data.get("total_duration_min", 60),
+        "blocks": blocks,
         "exercises": exercises
     }
 
