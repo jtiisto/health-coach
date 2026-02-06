@@ -109,7 +109,10 @@ export function formatTarget(exercise) {
     switch (exercise.type) {
         case 'strength':
         case 'circuit':
-            return `${exercise.target_sets} x ${exercise.target_reps}`;
+            if (exercise.target_sets && exercise.target_reps) {
+                return `${exercise.target_sets} x ${exercise.target_reps}`;
+            }
+            return exercise.target_reps || exercise.target_sets || '';
         case 'duration':
             return `${exercise.target_duration_min} min`;
         case 'checklist':

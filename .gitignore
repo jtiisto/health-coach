@@ -25,6 +25,9 @@ server.log
 .coverage
 htmlcov/
 
+# Nemp Memory
+.nemp/
+
 # OS
 .DS_Store
 Thumbs.db
