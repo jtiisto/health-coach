@@ -193,6 +193,16 @@ ingest_training_program({
                 "exercises": [
                     {"name": "KB Goblet Squat", "sets": 3, "reps": 10, "tempo": "3-1-1"}
                 ]
+            },
+            {
+                "block_type": "circuit",
+                "title": "Circuit Block",
+                "rest_guidance": "90 sec rest after each round",
+                "rounds": 4,
+                "exercises": [
+                    {"name": "KB Swings", "reps": 15, "notes": "Powerful hip snap"},
+                    {"name": "Push-ups", "reps": "Max", "notes": "Perfect form only"}
+                ]
             }
         ]
     }

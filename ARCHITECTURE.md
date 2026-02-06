@@ -327,7 +327,10 @@ Block Format                      Flat Exercise Format
 Transform logic in `_transform_block_to_exercises()`:
 1. Warmup blocks → Single checklist exercise
 2. Strength/accessory blocks → Individual strength exercises
-3. Cardio blocks with instructions → Duration/interval exercises
+3. Circuit/power blocks → Strength exercises with `target_sets` from block-level `rounds` field
+4. Cardio blocks with instructions → Duration/interval exercises
+
+Circuit and power blocks use an explicit `rounds` field at the block level to specify how many rounds to complete. This is passed through as `target_sets` on each exercise in the block. If an exercise has its own `sets` field, it takes precedence over block-level `rounds`.
 
 ## Security Considerations
 

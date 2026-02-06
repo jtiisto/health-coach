@@ -24,6 +24,7 @@ The root object represents a single day's workout.
       "title": "string (e.g., 'Strength Block', 'Zone 2 Flush')",
       "duration_min": "integer (estimated block time)",
       "rest_guidance": "string (optional, e.g., 'Rest until HR <= 130')",
+      "rounds": "integer (optional, for circuit/power blocks - number of rounds)",
       "exercises": [
         {
           "name": "string (Exercise Name)",
@@ -163,7 +164,8 @@ The root object represents a single day's workout.
       "block_type": "circuit",
       "title": "Circuit Block",
       "duration_min": 35,
-      "rest_guidance": "90 sec rest after each round. Complete 4 rounds.",
+      "rest_guidance": "90 sec rest after each round",
+      "rounds": 4,
       "exercises": [
         { "name": "KB Swings", "reps": 15, "notes": "Powerful hip snap" },
         { "name": "Push-ups", "reps": "Max", "notes": "Stop 2 shy of failure, perfect form" },

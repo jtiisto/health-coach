@@ -6,7 +6,6 @@ through the Model Context Protocol for LLM workout planning and analysis.
 
 import json
 import os
-import re
 import sqlite3
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -848,12 +847,7 @@ def _transform_block_to_exercises(block: dict, block_index: int) -> list:
 
     # Handle blocks with exercises list (non-warmup)
     elif "exercises" in block:
-        # Parse rounds from rest_guidance for circuit/power blocks
-        rounds_from_guidance = None
-        if block_type in ["circuit", "power"] and rest_guidance:
-            m = re.search(r"Complete\s+(\d+)(?:-\d+)?\s+rounds?", rest_guidance)
-            if m:
-                rounds_from_guidance = int(m.group(1))
+        block_rounds = block.get("rounds")
 
         for i, ex in enumerate(block["exercises"]):
             exercise_id = f"{block_type}_{block_index}_{i+1}"
@@ -874,8 +868,8 @@ def _transform_block_to_exercises(block: dict, block_index: int) -> list:
 
             if ex.get("sets"):
                 exercise["target_sets"] = ex["sets"] if isinstance(ex["sets"], int) else 3
-            elif rounds_from_guidance:
-                exercise["target_sets"] = rounds_from_guidance
+            elif block_rounds:
+                exercise["target_sets"] = block_rounds
             if ex.get("reps"):
                 reps_str = str(ex["reps"])
                 exercise["target_reps"] = reps_str
@@ -941,6 +935,7 @@ def _transform_block_plan(plan_data: dict) -> dict:
             "title": block.get("title", ""),
             "duration_min": block.get("duration_min"),
             "rest_guidance": block.get("rest_guidance", ""),
+            "rounds": block.get("rounds"),
             "exercises": block_exercises
         }
         blocks.append(transformed_block)

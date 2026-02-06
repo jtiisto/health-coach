@@ -7,28 +7,23 @@ from coach_mcp.server import _is_bodyweight_or_band, _transform_block_to_exercis
 
 # --- rounds parsing ---
 
-def _make_circuit_block(exercises, rest_guidance="", block_type="circuit"):
-    return {
+def _make_circuit_block(exercises, rest_guidance="", block_type="circuit", rounds=None):
+    block = {
         "block_type": block_type,
         "title": "Test Block",
         "rest_guidance": rest_guidance,
         "exercises": exercises,
     }
+    if rounds is not None:
+        block["rounds"] = rounds
+    return block
 
 
 class TestRoundsParsing:
     def test_circuit_4_rounds(self):
         block = _make_circuit_block(
             [{"name": "KB Swings", "reps": 10}],
-            rest_guidance="Complete 4 rounds with 60s rest",
-        )
-        results = _transform_block_to_exercises(block, 0)
-        assert results[0]["target_sets"] == 4
-
-    def test_range_takes_lower_bound(self):
-        block = _make_circuit_block(
-            [{"name": "KB Swings", "reps": 10}],
-            rest_guidance="Complete 4-5 rounds with 60s rest",
+            rounds=4,
         )
         results = _transform_block_to_exercises(block, 0)
         assert results[0]["target_sets"] == 4
@@ -36,16 +31,15 @@ class TestRoundsParsing:
     def test_power_block_rounds(self):
         block = _make_circuit_block(
             [{"name": "Box Jump", "reps": 5}],
-            rest_guidance="Complete 5 rounds",
+            rounds=5,
             block_type="power",
         )
         results = _transform_block_to_exercises(block, 0)
         assert results[0]["target_sets"] == 5
 
-    def test_no_rest_guidance_no_target_sets(self):
+    def test_no_rounds_no_target_sets(self):
         block = _make_circuit_block(
             [{"name": "KB Swings", "reps": 10}],
-            rest_guidance="",
         )
         results = _transform_block_to_exercises(block, 0)
         assert "target_sets" not in results[0]
@@ -53,7 +47,7 @@ class TestRoundsParsing:
     def test_explicit_sets_override_rounds(self):
         block = _make_circuit_block(
             [{"name": "KB Swings", "reps": 10, "sets": 2}],
-            rest_guidance="Complete 4 rounds",
+            rounds=4,
         )
         results = _transform_block_to_exercises(block, 0)
         assert results[0]["target_sets"] == 2
@@ -106,7 +100,8 @@ class TestGuidanceNote:
     def test_circuit_excludes_rest_guidance(self):
         block = _make_circuit_block(
             [{"name": "KB Swings", "reps": 10}],
-            rest_guidance="Complete 4 rounds with 60s rest",
+            rest_guidance="90 sec rest after each round",
+            rounds=4,
         )
         results = _transform_block_to_exercises(block, 0)
         assert results[0].get("guidance_note") is None
@@ -114,17 +109,18 @@ class TestGuidanceNote:
     def test_power_excludes_rest_guidance(self):
         block = _make_circuit_block(
             [{"name": "Box Jump", "reps": 5, "notes": "Explosive"}],
-            rest_guidance="Complete 5 rounds",
+            rest_guidance="60 sec rest after each round",
+            rounds=5,
             block_type="power",
         )
         results = _transform_block_to_exercises(block, 0)
-        assert "Complete 5 rounds" not in results[0]["guidance_note"]
+        assert "60 sec rest" not in results[0]["guidance_note"]
         assert "Explosive" in results[0]["guidance_note"]
 
     def test_circuit_exercise_notes_still_shown(self):
         block = _make_circuit_block(
             [{"name": "KB Swings", "reps": 10, "load_guide": "Heavy"}],
-            rest_guidance="Complete 4 rounds",
+            rounds=4,
         )
         results = _transform_block_to_exercises(block, 0)
         assert results[0]["guidance_note"] == "Heavy"
