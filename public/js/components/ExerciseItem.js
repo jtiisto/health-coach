@@ -49,6 +49,8 @@ export function ExerciseItem({ date, exercise, logData, isEditable = true }) {
                         exerciseId=${exercise.id}
                         targetSets=${exercise.target_sets || 3}
                         sets=${logData?.sets || []}
+                        showTime=${!!exercise.show_time}
+                        showWeight=${!exercise.hide_weight}
                         isEditable=${isEditable}
                     />
                 `;

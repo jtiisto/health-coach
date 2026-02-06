@@ -8,7 +8,7 @@ import { updateLog } from '../store.js';
 
 const html = htm.bind(h);
 
-export function SetEntry({ date, exerciseId, targetSets, sets, showTime = false, isEditable = true }) {
+export function SetEntry({ date, exerciseId, targetSets, sets, showTime = false, showWeight = true, isEditable = true }) {
     const handleSetChange = (setIndex, field, value) => {
         if (!isEditable) return;
         const updatedSets = [...sets];
@@ -39,15 +39,17 @@ export function SetEntry({ date, exerciseId, targetSets, sets, showTime = false,
                 <div class="set-row" key=${index}>
                     <span class="set-num">${index + 1}</span>
 
-                    <input
-                        type="number"
-                        class="set-input weight"
-                        placeholder="lbs"
-                        value=${data.weight ?? ''}
-                        onInput=${(e) => handleSetChange(index, 'weight', e.target.value ? Number(e.target.value) : null)}
-                        disabled=${!isEditable}
-                    />
-                    <span class="set-label">lbs</span>
+                    ${showWeight ? html`
+                        <input
+                            type="number"
+                            class="set-input weight"
+                            placeholder="lbs"
+                            value=${data.weight ?? ''}
+                            onInput=${(e) => handleSetChange(index, 'weight', e.target.value ? Number(e.target.value) : null)}
+                            disabled=${!isEditable}
+                        />
+                        <span class="set-label">lbs</span>
+                    ` : null}
 
                     ${showTime ? html`
                         <input
