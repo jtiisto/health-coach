@@ -13,8 +13,11 @@ from coach_mcp.server import create_mcp_server, _transform_block_plan
 
 
 def main():
-    # Load the JSON plans
-    json_path = Path(__file__).parent.parent / "exercise_plans_json.json"
+    if len(sys.argv) < 2:
+        print(f"Usage: {sys.argv[0]} <plans.json>")
+        sys.exit(1)
+
+    json_path = Path(sys.argv[1])
 
     if not json_path.exists():
         print(f"Error: {json_path} not found")
