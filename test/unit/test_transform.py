@@ -1,8 +1,13 @@
-"""Tests for _transform_block_to_exercises and _is_bodyweight_or_band."""
+"""Tests for _transform_block_to_exercises, _transform_block_plan, and _is_bodyweight_or_band."""
 
 import pytest
 
-from coach_mcp.server import _is_bodyweight_or_band, _transform_block_to_exercises
+from coach_mcp.server import (
+    _is_bodyweight_or_band,
+    _transform_block_to_exercises,
+    _transform_block_plan,
+    _get_coach_plan_guide,
+)
 
 
 # --- rounds parsing ---
@@ -235,3 +240,230 @@ class TestEquipmentField:
         block = _make_circuit_block([{"name": "Suspension Row", "reps": 10, "equipment": "trx"}])
         results = _transform_block_to_exercises(block, 0)
         assert "hide_weight" not in results[0]
+
+
+# --- warmup block transform ---
+
+class TestWarmupBlock:
+    def test_warmup_with_int_reps(self):
+        """Warmup exercises with integer reps use 'xN' format."""
+        block = {
+            "block_type": "warmup",
+            "title": "Warmup",
+            "exercises": [{"name": "Cat-Cow", "reps": 10}],
+        }
+        results = _transform_block_to_exercises(block, 0)
+        assert len(results) == 1
+        assert results[0]["type"] == "checklist"
+        assert "Cat-Cow x10" in results[0]["items"]
+
+    def test_warmup_with_string_reps(self):
+        """Warmup exercises with string reps append directly."""
+        block = {
+            "block_type": "warmup",
+            "title": "Warmup",
+            "exercises": [{"name": "Bird-Dog", "reps": "5/side"}],
+        }
+        results = _transform_block_to_exercises(block, 0)
+        assert "Bird-Dog 5/side" in results[0]["items"]
+
+    def test_warmup_with_no_reps(self):
+        """Warmup exercises without reps just use name."""
+        block = {
+            "block_type": "warmup",
+            "title": "Warmup",
+            "exercises": [{"name": "Standard Warmup Routine"}],
+        }
+        results = _transform_block_to_exercises(block, 0)
+        assert "Standard Warmup Routine" in results[0]["items"]
+
+    def test_warmup_uses_title(self):
+        """Warmup block uses its title as the exercise name."""
+        block = {
+            "block_type": "warmup",
+            "title": "The Stability Start",
+            "exercises": [{"name": "Cat-Cow", "reps": 10}],
+        }
+        results = _transform_block_to_exercises(block, 0)
+        assert results[0]["name"] == "The Stability Start"
+
+    def test_warmup_fallback_name(self):
+        """Warmup block without title defaults to 'Warmup'."""
+        block = {
+            "block_type": "warmup",
+            "exercises": [{"name": "Cat-Cow", "reps": 10}],
+        }
+        results = _transform_block_to_exercises(block, 0)
+        assert results[0]["name"] == "Warmup"
+
+
+# --- cardio/instruction blocks ---
+
+class TestCardioInstructionBlock:
+    def test_zone2_cardio_block(self):
+        """Cardio block with instructions becomes a duration exercise."""
+        block = {
+            "block_type": "cardio",
+            "title": "Zone 2 Flush",
+            "duration_min": 15,
+            "instructions": ["Equipment: Exercise Bike", "Strict 135-145 bpm"],
+        }
+        results = _transform_block_to_exercises(block, 0)
+        assert len(results) == 1
+        assert results[0]["type"] == "duration"
+        assert results[0]["name"] == "Zone 2 Flush"
+        assert results[0]["target_duration_min"] == 15
+        assert "Exercise Bike" in results[0]["guidance_note"]
+
+    def test_vo2_interval_block(self):
+        """Cardio block with VO2 keyword becomes an interval exercise."""
+        block = {
+            "block_type": "cardio",
+            "title": "VO2 Max Session",
+            "duration_min": 20,
+            "instructions": ["3 min warmup", "4x4 min VO2 intervals", "3 min cooldown"],
+        }
+        results = _transform_block_to_exercises(block, 0)
+        assert results[0]["type"] == "interval"
+        assert results[0]["name"] == "VO2 Max Intervals"
+
+    def test_hard_interval_block(self):
+        """Cardio block with HARD keyword becomes an interval exercise."""
+        block = {
+            "block_type": "cardio",
+            "title": "HIIT",
+            "duration_min": 10,
+            "instructions": ["30 sec HARD sprint", "90 sec recovery", "Repeat 6x"],
+        }
+        results = _transform_block_to_exercises(block, 0)
+        assert results[0]["type"] == "interval"
+
+    def test_cardio_fallback_name(self):
+        """Cardio block without title defaults to 'Zone 2 Cardio'."""
+        block = {
+            "block_type": "cardio",
+            "duration_min": 20,
+            "instructions": ["Maintain HR 135-148 bpm"],
+        }
+        results = _transform_block_to_exercises(block, 0)
+        assert results[0]["name"] == "Zone 2 Cardio"
+
+    def test_cardio_exercise_id(self):
+        """Cardio instruction block gets correct exercise ID."""
+        block = {
+            "block_type": "cardio",
+            "title": "Cardio",
+            "duration_min": 15,
+            "instructions": ["Easy pace"],
+        }
+        results = _transform_block_to_exercises(block, 2)
+        assert results[0]["id"] == "cardio_2_1"
+
+
+# --- unknown block type fallback ---
+
+class TestUnknownBlockType:
+    def test_unknown_block_type_defaults_to_strength(self):
+        """Exercises in an unrecognized block type default to strength."""
+        block = {
+            "block_type": "mobility",
+            "title": "Mobility",
+            "exercises": [{"name": "Hip Circles", "reps": 10}],
+        }
+        results = _transform_block_to_exercises(block, 0)
+        assert results[0]["type"] == "strength"
+
+
+# --- tempo in guidance ---
+
+class TestTempoGuidance:
+    def test_tempo_included_in_guidance(self):
+        """Tempo field appears in guidance note."""
+        block = {
+            "block_type": "strength",
+            "title": "Strength",
+            "rest_guidance": "",
+            "exercises": [{"name": "Squat", "reps": 5, "tempo": "3-1-1"}],
+        }
+        results = _transform_block_to_exercises(block, 0)
+        assert "Tempo 3-1-1" in results[0]["guidance_note"]
+
+
+# --- _transform_block_plan ---
+
+class TestTransformBlockPlan:
+    def test_basic_transform(self):
+        """Transform a plan with one strength block."""
+        plan_data = {
+            "theme": "Lower Body",
+            "location": "Gym",
+            "phase": "Building",
+            "total_duration_min": 45,
+            "blocks": [
+                {
+                    "block_type": "strength",
+                    "title": "Strength Block",
+                    "duration_min": 30,
+                    "exercises": [{"name": "Squat", "sets": 3, "reps": 5}],
+                }
+            ],
+        }
+        result = _transform_block_plan(plan_data)
+        assert result["day_name"] == "Lower Body"
+        assert result["location"] == "Gym"
+        assert result["phase"] == "Building"
+        assert result["total_duration_min"] == 45
+        assert len(result["blocks"]) == 1
+        assert len(result["exercises"]) == 1
+
+    def test_defaults_when_fields_missing(self):
+        """Missing fields get sensible defaults."""
+        plan_data = {"blocks": []}
+        result = _transform_block_plan(plan_data)
+        assert result["day_name"] == "Workout"
+        assert result["location"] == "Home"
+        assert result["phase"] == "Foundation"
+        assert result["total_duration_min"] == 60
+
+    def test_multiple_blocks_flatten_exercises(self):
+        """Exercises from multiple blocks are flattened into one list."""
+        plan_data = {
+            "theme": "Full Body",
+            "blocks": [
+                {
+                    "block_type": "warmup",
+                    "title": "Warmup",
+                    "exercises": [{"name": "Cat-Cow", "reps": 10}],
+                },
+                {
+                    "block_type": "strength",
+                    "title": "Strength",
+                    "exercises": [{"name": "Squat", "sets": 3, "reps": 5}],
+                },
+                {
+                    "block_type": "cardio",
+                    "title": "Cardio",
+                    "duration_min": 15,
+                    "instructions": ["Zone 2 at 140 bpm"],
+                },
+            ],
+        }
+        result = _transform_block_plan(plan_data)
+        assert len(result["blocks"]) == 3
+        assert len(result["exercises"]) == 3
+
+
+# --- coach plan guide ---
+
+class TestCoachPlanGuide:
+    def test_guide_returns_nonempty_string(self):
+        """The coach plan guide should return a non-empty string."""
+        guide = _get_coach_plan_guide()
+        assert isinstance(guide, str)
+        assert len(guide) > 100
+
+    def test_guide_contains_key_sections(self):
+        """The guide should reference key tools and structure."""
+        guide = _get_coach_plan_guide()
+        assert "set_workout_plan" in guide
+        assert "exercises" in guide

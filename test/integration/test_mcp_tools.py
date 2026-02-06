@@ -405,6 +405,16 @@ class TestGetWorkoutSummary:
         assert result["completed_workouts"] == 0
         assert result["completion_rate_percent"] == 0
 
+    def test_summary_days_exceeds_max(self, mcp_config):
+        """Should raise ValueError when days exceeds 365."""
+        from coach_mcp.server import create_mcp_server
+
+        mcp = create_mcp_server(mcp_config)
+        tools = {tool.name: tool for tool in mcp._tool_manager._tools.values()}
+
+        with pytest.raises(ValueError, match="Days cannot exceed 365"):
+            tools["get_workout_summary"].fn(days=400)
+
     def test_summary_with_data(self, mcp_config, sample_plan, sample_log):
         """Should return accurate summary with data."""
         from coach_mcp.server import create_mcp_server, DatabaseManager
@@ -589,6 +599,44 @@ class TestIngestTrainingProgram:
         assert result["failed_count"] == 1
         assert "2026-02-02" in result["success_dates"]
 
+    def test_ingest_without_transform_adds_day_name(self, mcp_config):
+        """Should auto-set day_name from theme when missing and not transforming."""
+        from coach_mcp.server import create_mcp_server
+
+        mcp = create_mcp_server(mcp_config)
+        tools = {tool.name: tool for tool in mcp._tool_manager._tools.values()}
+
+        plans = {
+            "2026-02-02": {
+                "theme": "Upper Body Focus",
+                "exercises": [{"id": "ex_1", "name": "Squat", "type": "strength"}]
+            }
+        }
+
+        result = tools["ingest_training_program"].fn(plans=plans, transform_blocks=False)
+        assert result["success_count"] == 1
+
+        fetched = tools["get_workout_plan"].fn(start_date="2026-02-02", end_date="2026-02-02")
+        assert fetched[0]["plan"]["day_name"] == "Upper Body Focus"
+
+    def test_ingest_empty_exercises_fails(self, mcp_config):
+        """Should fail when plan has no exercises."""
+        from coach_mcp.server import create_mcp_server
+
+        mcp = create_mcp_server(mcp_config)
+        tools = {tool.name: tool for tool in mcp._tool_manager._tools.values()}
+
+        plans = {
+            "2026-02-02": {
+                "day_name": "Empty Plan",
+                "exercises": []
+            }
+        }
+
+        result = tools["ingest_training_program"].fn(plans=plans, transform_blocks=False)
+        assert result["failed_count"] == 1
+        assert result["success_count"] == 0
+
 
 @pytest.mark.integration
 class TestUpdateExercise:
@@ -720,6 +768,34 @@ class TestAddExercise:
                 exercise={"id": "ex_new", "name": "Invalid", "type": "invalid_type"}
             )
 
+    def test_add_exercise_no_plan(self, mcp_config):
+        """Should fail when plan doesn't exist."""
+        from coach_mcp.server import create_mcp_server
+
+        mcp = create_mcp_server(mcp_config)
+        tools = {tool.name: tool for tool in mcp._tool_manager._tools.values()}
+
+        with pytest.raises(ValueError, match="No plan found"):
+            tools["add_exercise"].fn(
+                date="2026-02-02",
+                exercise={"id": "ex_new", "name": "Plank", "type": "duration"}
+            )
+
+    def test_add_exercise_missing_required_field(self, mcp_config, sample_plan):
+        """Should reject exercise missing required fields."""
+        from coach_mcp.server import create_mcp_server
+
+        mcp = create_mcp_server(mcp_config)
+        tools = {tool.name: tool for tool in mcp._tool_manager._tools.values()}
+
+        tools["set_workout_plan"].fn(date="2026-02-02", plan=sample_plan)
+
+        with pytest.raises(ValueError, match="missing required field"):
+            tools["add_exercise"].fn(
+                date="2026-02-02",
+                exercise={"name": "Plank", "type": "duration"}  # Missing id
+            )
+
 
 @pytest.mark.integration
 class TestRemoveExercise:
@@ -749,6 +825,16 @@ class TestRemoveExercise:
 
         with pytest.raises(ValueError, match="not found"):
             tools["remove_exercise"].fn(date="2026-02-02", exercise_id="nonexistent")
+
+    def test_remove_exercise_no_plan(self, mcp_config):
+        """Should fail when plan doesn't exist."""
+        from coach_mcp.server import create_mcp_server
+
+        mcp = create_mcp_server(mcp_config)
+        tools = {tool.name: tool for tool in mcp._tool_manager._tools.values()}
+
+        with pytest.raises(ValueError, match="No plan found"):
+            tools["remove_exercise"].fn(date="2026-02-02", exercise_id="ex_1")
 
 
 @pytest.mark.integration
@@ -802,6 +888,19 @@ class TestUpdatePlanMetadata:
         assert result["plan_metadata"]["phase"] == "Building"
         assert result["plan_metadata"]["location"] == "Gym"
         assert result["plan_metadata"]["exercise_count"] == original_exercise_count
+
+    def test_update_metadata_no_plan(self, mcp_config):
+        """Should fail when plan doesn't exist."""
+        from coach_mcp.server import create_mcp_server
+
+        mcp = create_mcp_server(mcp_config)
+        tools = {tool.name: tool for tool in mcp._tool_manager._tools.values()}
+
+        with pytest.raises(ValueError, match="No plan found"):
+            tools["update_plan_metadata"].fn(
+                date="2026-02-02",
+                updates={"day_name": "Updated"}
+            )
 
     def test_update_metadata_invalid_field(self, mcp_config, sample_plan):
         """Should reject invalid metadata fields."""
