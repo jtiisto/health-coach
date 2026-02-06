@@ -33,7 +33,8 @@ The root object represents a single day's workout.
           "tempo": "string (optional, e.g., '3-1-1')",
           "rest": "string (optional specific rest per exercise)",
           "load_guide": "string (optional, e.g., 'RPE 7-8', 'Heaviest KB')",
-          "notes": "string (optional technique cues)"
+          "notes": "string (optional technique cues)",
+          "equipment": "string (optional, enum: 'bodyweight', 'band', 'kettlebell', 'dumbbell', 'barbell', 'machine', 'cable')"
         }
       ],
       "instructions": [
@@ -167,11 +168,11 @@ The root object represents a single day's workout.
       "rest_guidance": "90 sec rest after each round",
       "rounds": 4,
       "exercises": [
-        { "name": "KB Swings", "reps": 15, "notes": "Powerful hip snap" },
-        { "name": "Push-ups", "reps": "Max", "notes": "Stop 2 shy of failure, perfect form" },
-        { "name": "Band Pull-Aparts", "reps": 20, "notes": "Squeeze shoulder blades" },
-        { "name": "Bodyweight Squat Hold", "reps": "30 sec", "notes": "Parallel depth, static hold" },
-        { "name": "Single-Arm Overhead Carry", "reps": "30 sec/side", "notes": "Heavy KB, tight core" }
+        { "name": "KB Swings", "reps": 15, "notes": "Powerful hip snap", "equipment": "kettlebell" },
+        { "name": "Push-ups", "reps": "Max", "notes": "Stop 2 shy of failure, perfect form", "equipment": "bodyweight" },
+        { "name": "Band Pull-Aparts", "reps": 20, "notes": "Squeeze shoulder blades", "equipment": "band" },
+        { "name": "Bodyweight Squat Hold", "reps": "30 sec", "notes": "Parallel depth, static hold", "equipment": "bodyweight" },
+        { "name": "Single-Arm Overhead Carry", "reps": "30 sec/side", "notes": "Heavy KB, tight core", "equipment": "kettlebell" }
       ]
     },
     {
@@ -179,8 +180,8 @@ The root object represents a single day's workout.
       "title": "Leg Accessory Block",
       "duration_min": 10,
       "exercises": [
-        { "name": "Single-Leg Calf Raises", "sets": 2, "reps": "15/leg", "notes": "slow eccentric" },
-        { "name": "Banded Lateral Walks", "sets": 2, "reps": "15/direction" }
+        { "name": "Single-Leg Calf Raises", "sets": 2, "reps": "15/leg", "notes": "slow eccentric", "equipment": "dumbbell" },
+        { "name": "Banded Lateral Walks", "sets": 2, "reps": "15/direction", "equipment": "band" }
       ]
     },
     {

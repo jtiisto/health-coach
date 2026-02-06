@@ -329,6 +329,7 @@ Transform logic in `_transform_block_to_exercises()`:
 2. Strength/accessory blocks → Individual strength exercises
 3. Circuit/power blocks → Strength exercises with `target_sets` from block-level `rounds` field
 4. Cardio blocks with instructions → Duration/interval exercises
+5. The optional `equipment` field on exercises (`"bodyweight"`, `"band"`, `"kettlebell"`, `"dumbbell"`, `"barbell"`, `"machine"`, `"cable"`) drives `hide_weight`. Values `"bodyweight"` and `"band"` set `hide_weight: true`. When `equipment` is absent, the name-based heuristic (`_is_bodyweight_or_band()`) is used as a fallback.
 
 Circuit and power blocks use an explicit `rounds` field at the block level to specify how many rounds to complete. This is passed through as `target_sets` on each exercise in the block. If an exercise has its own `sets` field, it takes precedence over block-level `rounds`.
 

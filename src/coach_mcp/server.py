@@ -877,7 +877,11 @@ def _transform_block_to_exercises(block: dict, block_index: int) -> list:
                     exercise["show_time"] = True
 
             # Hide weight for bodyweight/band exercises
-            if _is_bodyweight_or_band(ex.get("name", "")):
+            equipment = ex.get("equipment")
+            if equipment:
+                if equipment in ("bodyweight", "band"):
+                    exercise["hide_weight"] = True
+            elif _is_bodyweight_or_band(ex.get("name", "")):
                 exercise["hide_weight"] = True
 
             # Build guidance note

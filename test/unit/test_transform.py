@@ -183,3 +183,55 @@ class TestIsBodyweightOrBand:
     def test_weighted_exercises(self):
         assert _is_bodyweight_or_band("KB Swings") is False
         assert _is_bodyweight_or_band("Barbell Squat") is False
+
+
+# --- equipment field ---
+
+class TestEquipmentField:
+    def test_bodyweight_equipment_hides_weight(self):
+        block = _make_circuit_block([{"name": "Mountain Climbers", "reps": 20, "equipment": "bodyweight"}])
+        results = _transform_block_to_exercises(block, 0)
+        assert results[0].get("hide_weight") is True
+
+    def test_band_equipment_hides_weight(self):
+        block = _make_circuit_block([{"name": "Face Pulls", "reps": 15, "equipment": "band"}])
+        results = _transform_block_to_exercises(block, 0)
+        assert results[0].get("hide_weight") is True
+
+    def test_kettlebell_equipment_shows_weight(self):
+        block = _make_circuit_block([{"name": "KB Swings", "reps": 15, "equipment": "kettlebell"}])
+        results = _transform_block_to_exercises(block, 0)
+        assert "hide_weight" not in results[0]
+
+    def test_dumbbell_equipment_shows_weight(self):
+        block = _make_circuit_block([{"name": "DB Row", "reps": 10, "equipment": "dumbbell"}])
+        results = _transform_block_to_exercises(block, 0)
+        assert "hide_weight" not in results[0]
+
+    def test_barbell_equipment_shows_weight(self):
+        block = _make_circuit_block([{"name": "Barbell Squat", "reps": 5, "equipment": "barbell"}])
+        results = _transform_block_to_exercises(block, 0)
+        assert "hide_weight" not in results[0]
+
+    def test_machine_equipment_shows_weight(self):
+        block = _make_circuit_block([{"name": "Leg Press", "reps": 12, "equipment": "machine"}])
+        results = _transform_block_to_exercises(block, 0)
+        assert "hide_weight" not in results[0]
+
+    def test_equipment_overrides_name_heuristic(self):
+        """An exercise with 'push-up' in name but dumbbell equipment should show weight."""
+        block = _make_circuit_block([{"name": "DB Push-up Press", "reps": 10, "equipment": "dumbbell"}])
+        results = _transform_block_to_exercises(block, 0)
+        assert "hide_weight" not in results[0]
+
+    def test_missing_equipment_falls_back_to_heuristic(self):
+        """Without equipment field, name-based heuristic still works."""
+        block = _make_circuit_block([{"name": "Push-ups", "reps": 10}])
+        results = _transform_block_to_exercises(block, 0)
+        assert results[0].get("hide_weight") is True
+
+    def test_unknown_equipment_shows_weight(self):
+        """Unknown equipment values should not hide weight."""
+        block = _make_circuit_block([{"name": "Suspension Row", "reps": 10, "equipment": "trx"}])
+        results = _transform_block_to_exercises(block, 0)
+        assert "hide_weight" not in results[0]

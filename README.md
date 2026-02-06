@@ -191,7 +191,7 @@ ingest_training_program({
                 "title": "Main Lifts",
                 "rest_guidance": "Rest until HR <= 130",
                 "exercises": [
-                    {"name": "KB Goblet Squat", "sets": 3, "reps": 10, "tempo": "3-1-1"}
+                    {"name": "KB Goblet Squat", "sets": 3, "reps": 10, "tempo": "3-1-1", "equipment": "kettlebell"}
                 ]
             },
             {
@@ -200,8 +200,8 @@ ingest_training_program({
                 "rest_guidance": "90 sec rest after each round",
                 "rounds": 4,
                 "exercises": [
-                    {"name": "KB Swings", "reps": 15, "notes": "Powerful hip snap"},
-                    {"name": "Push-ups", "reps": "Max", "notes": "Perfect form only"}
+                    {"name": "KB Swings", "reps": 15, "notes": "Powerful hip snap", "equipment": "kettlebell"},
+                    {"name": "Push-ups", "reps": "Max", "notes": "Perfect form only", "equipment": "bodyweight"}
                 ]
             }
         ]
