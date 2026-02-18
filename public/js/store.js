@@ -224,6 +224,14 @@ if (typeof window !== 'undefined') {
     window.addEventListener('offline', () => {
         updateSyncStatus();
     });
+
+    // Re-sync when the app regains focus (e.g., user switches back from
+    // another tab/app after plans were updated via MCP on the backend)
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible' && navigator.onLine) {
+            triggerSync();
+        }
+    });
 }
 
 // ==================== Sync ====================
